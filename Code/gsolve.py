@@ -55,7 +55,7 @@ def gsolve(Z, B, lambda_, w):
 		k += 1
 
 	# solve the system using LLS
-	output = np.linalg.lstsq(A, b)
+	output = np.linalg.lstsq(A, b, rcond= None)
 	x = output[0]
 	g = x[:n]
 	lE = x[n:]
