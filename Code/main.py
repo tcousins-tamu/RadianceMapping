@@ -5,6 +5,7 @@ import cv2
 from gsolve import gsolve
 from utils import *
 from skimage.filters import gaussian
+import matplotlib.colors as clrs
 # Based on code by James Tompkin
 #
 # reads in a directory and parses out the exposure values
@@ -36,8 +37,9 @@ _lambda = 50
 gamma = .2
 std_dev = 1
 
-#calibSetName = 'Chapel'
-calibSetName = 'Office'
+calibSetName = 'Chapel'
+#calibSetName = 'Office'
+
 # Parsing the input images to get the file names and corresponding exposure
 # values
 filePaths, exposures = ParseFiles(calibSetName, inputDir)
@@ -62,7 +64,6 @@ for channel in range(images.shape[-1]):
         for i in range(len(images)):
             Z[p, i] = images[i][pixels[p][0]][pixels[p][1]][channel]
             
-    #you mentioned fixing the zeroes with some multiplication, I just stretched range instead
     Zmax = 255
     Zmin = 0 
 
@@ -75,7 +76,7 @@ plt.title("CRF")
 plt.show()
 
 """ Task 2 """
-# Reconstruct the radiance using the calculated CRF, just realized I dont know what image to use
+#Reconstructing the radiance from the CRF and the input images
 radiance = np.zeros(images[0].shape)
 weightsSum  = np.zeros(images[0].shape)
 for chan in range(images.shape[-1]):
@@ -84,57 +85,47 @@ for chan in range(images.shape[-1]):
         radiance[:, :, chan] += (holder* (g[chan, images[img, :, :, chan]] - B[img])).reshape(images[0].shape[:2])
         weightsSum[:, :, chan] += holder
     
-print(np.max(radiance), np.min(radiance))
 weightsSum[weightsSum == 0] = 1e-100
 for chan in range(images.shape[-1]):
-    print(np.max(weightsSum[:,:, chan]), np.min(weightsSum[:,:,chan]))
     radiance[:, :, chan]/=weightsSum[:,:, chan]
 
-radiance -= np.min(radiance)
-radiance = np.power(radiance, 2.71)
+radiance = np.exp(radiance)
 
 rad1D = radiance[:, :, 0] + radiance[:, :, 1] + radiance[:, :,2]
-#these steps were taken to make it map better
-rad1D -= np.min(rad1D)
-rad1D  = np.power(rad1D, 1/2.2)
-rad1D *= 255/np.max(rad1D)
-plt.imshow(rad1D, cmap="jet")
+plt.imshow(rad1D, cmap="jet", norm=clrs.LogNorm(vmin=radiance.min(), vmax=radiance.max()))
 cbar = plt.colorbar()
 plt.title('Radiance')
 plt.show()
 
 """ Task 3 """
 # Perform both local and global tone-mapping
-#Global Tone-mapping. I do not know if this is channel based, so Im leaving it as is for now
-globTone = (radiance/np.max(radiance))**(.5)
+#Global Tone Mapping
+globTone = (radiance/np.max(radiance))**(.1)
 plt.imshow(globTone)
 plt.title('Global Tone Mapping')
 plt.show()
 
 
 
-# #Local Tone Mapping
+#Local Tone Mapping
 intensity = np.zeros(radiance.shape[-1])
 chrominance = np.zeros(radiance.shape)
 intensity = np.mean(radiance, axis = -1)
-intensity[intensity == 0] = 1e-100
+intensity = np.abs(intensity)
 for chan in range(images.shape[-1]):
-    # intensity[chan] = np.mean(radiance[:,:,chan]) #intensity calculation
     chrominance[:,:,chan] = radiance[:,:,chan]/intensity #[:,:,chan]
 
-chrominance[chrominance == 0] = 1e-100
 lInt = np.log2(intensity) #the average of the color channels would be three digits, I think this refers to chrominance
 lIntFilt = gaussian(lInt, std_dev)
 
 detail = lInt - lIntFilt
-lIntFilt = (lIntFilt - np.max(lIntFilt))*4 #4 is an arbitrary scalar selected from the doc
+lIntFilt = (lIntFilt - np.max(lIntFilt))*(4/(np.max(lIntFilt) - np.min(lIntFilt))) #4 is an arbitrary scalar selected from the doc
 
 lItensity = np.power(2, lIntFilt+detail)
 out = np.zeros(radiance.shape)
 for chan in range(images.shape[-1]):
     out[:, :, chan] = chrominance[: ,:, chan]*lItensity
-
-out = out**(.1)
+out = out**(.5)
 plt.imshow(out)
 plt.title('Local Tone Mapping')
 plt.show()
